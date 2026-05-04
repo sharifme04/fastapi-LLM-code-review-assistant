@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Code Review Assistant</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #0d1117;
+        color: #c9d1d9;
+        line-height: 1.5;
+      }
+      header {
+        padding: 16px 24px;
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+      }
+      header h1 { margin: 0; font-size: 18px; }
+      header .sub { margin: 4px 0 0; color: #8b949e; font-size: 13px; }
+      main {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        padding: 16px;
+        height: calc(100vh - 64px);
+      }
+      .panel {
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .panel h2 { margin: 0; padding: 12px 16px; border-bottom: 1px solid #30363d; font-size: 14px; }
+      .toolbar { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #30363d; align-items: center; }
+      select, input, button, textarea {
+        background: #0d1117;
+        color: #c9d1d9;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+      }
+      button {
+        background: #238636;
+        border-color: #238636;
+        color: white;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button:disabled { background: #30363d; border-color: #30363d; cursor: not-allowed; }
+      button.secondary { background: #21262d; border-color: #30363d; color: #c9d1d9; }
+      textarea {
+        flex: 1;
+        resize: none;
+        padding: 12px;
+        border: none;
+        border-radius: 0;
+        outline: none;
+      }
+      .output { flex: 1; padding: 12px 16px; overflow-y: auto; font-size: 13px; white-space: pre-wrap; word-wrap: break-word; }
+      .review-line { display: block; margin-bottom: 2px; }
+      .issue-marker {
+        background: #f8514927;
+        color: #f85149;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-right: 4px;
+      }
+      .tool-event {
+        margin: 8px 0;
+        padding: 8px 12px;
+        background: #0d1117;
+        border-left: 3px solid #58a6ff;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .tool-event .name { color: #58a6ff; font-weight: 600; }
+      .tool-event pre { margin: 4px 0 0; color: #8b949e; white-space: pre-wrap; }
+      .meta { padding: 8px 16px; border-top: 1px solid #30363d; color: #8b949e; font-size: 12px; }
+      .status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #8b949e; margin-right: 6px; }
+      .status.connected { background: #3fb950; }
+      .status.streaming { background: #d29922; animation: pulse 1s infinite; }
+      .status.error { background: #f85149; }
+      @keyframes pulse { 50% { opacity: 0.4; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Real-Time Code Review Assistant</h1>
+      <p class="sub">WebSocket streaming + manual tool-calling loop with Claude</p>
+    </header>
+    <main>
+      <section class="panel">
+        <h2>Submit Code</h2>
+        <div class="toolbar">
+          <label for="lang">Language:</label>
+          <select id="lang">
+            <option value="python">python</option>
+            <option value="javascript">javascript</option>
+            <option value="typescript">typescript</option>
+            <option value="java">java</option>
+            <option value="go">go</option>
+            <option value="rust">rust</option>
+            <option value="cpp">cpp</option>
+          </select>
+          <label for="style">Style guide:</label>
+          <select id="style">
+            <option value="">(none)</option>
+            <option value="pep8">pep8</option>
+            <option value="google">google</option>
+            <option value="airbnb">airbnb</option>
+          </select>
+          <button id="submit">Review</button>
+          <button id="clear" class="secondary">Clear</button>
+        </div>
+        <textarea id="code" placeholder="Paste code here…">def Process_Data(items):
+    result = []
+    for i in range(0, len(items)):
+        if items[i] != None:
+            result.append(items[i] * 2)
+    return result
+</textarea>
+      </section>
+
+      <section class="panel">
+        <h2><span id="statusDot" class="status"></span><span id="statusText">disconnected</span></h2>
+        <div id="output" class="output"></div>
+        <div id="meta" class="meta">Submit code to start a review.</div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const output = $("output");
+      const meta = $("meta");
+      const statusDot = $("statusDot");
+      const statusText = $("statusText");
+      const submitBtn = $("submit");
+
+      function setStatus(state, text) {
+        statusDot.className = "status " + state;
+        statusText.textContent = text;
+      }
+
+      function appendChunk(text) {
+        const span = document.createElement("span");
+        span.textContent = text;
+        output.appendChild(span);
+        output.scrollTop = output.scrollHeight;
+      }
+
+      function appendToolEvent(payload) {
+        const div = document.createElement("div");
+        div.className = "tool-event";
+        const inputJson = JSON.stringify(payload.input, null, 2);
+        const trimmed = (payload.result || "").slice(0, 600);
+        div.innerHTML = `<span class="name">🔧 ${payload.tool}</span>` +
+          `<pre>input: ${inputJson}\nresult: ${trimmed}${payload.result.length > 600 ? "…" : ""}</pre>`;
+        output.appendChild(div);
+        output.scrollTop = output.scrollHeight;
+      }
+
+      function startReview() {
+        const code = $("code").value;
+        const language = $("lang").value;
+        const style = $("style").value;
+
+        output.innerHTML = "";
+        meta.textContent = "Connecting…";
+        submitBtn.disabled = true;
+
+        const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+        const ws = new WebSocket(`${wsProto}//${location.host}/review`);
+
+        ws.onopen = () => {
+          setStatus("connected", "connected");
+          ws.send(JSON.stringify({
+            type: "submit_code",
+            code: code,
+            language: language,
+            style_guide: style || undefined,
+          }));
+          setStatus("streaming", "streaming…");
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "review_chunk") {
+            appendChunk(msg.chunk);
+          } else if (msg.type === "tool_call") {
+            appendToolEvent(msg);
+          } else if (msg.type === "review_complete") {
+            const m = msg.metadata || {};
+            const cacheBadge = m.cache_hit ? " ⚡ (cache hit)" : "";
+            meta.textContent = `Review #${m.review_id} • ${m.issues_count} issues • ` +
+              `${m.tokens_used} tokens • $${(m.cost || 0).toFixed(6)}${cacheBadge}`;
+            setStatus("connected", "complete");
+            submitBtn.disabled = false;
+          } else if (msg.type === "error") {
+            const detail = msg.detail ? "\n" + JSON.stringify(msg.detail, null, 2) : "";
+            output.innerHTML = `<div style="color:#f85149">⚠ ${msg.error}${detail}</div>`;
+            setStatus("error", "error");
+            submitBtn.disabled = false;
+          }
+        };
+
+        ws.onerror = () => {
+          setStatus("error", "connection error");
+          submitBtn.disabled = false;
+        };
+
+        ws.onclose = () => {
+          if (statusText.textContent === "streaming…") {
+            setStatus("error", "disconnected");
+          }
+          submitBtn.disabled = false;
+        };
+      }
+
+      submitBtn.addEventListener("click", startReview);
+      $("clear").addEventListener("click", () => {
+        output.innerHTML = "";
+        meta.textContent = "Submit code to start a review.";
+        setStatus("", "disconnected");
+      });
+    </script>
+  </body>
+</html>
