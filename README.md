@@ -199,21 +199,4 @@ Current status: **31 / 31 passing**.
 | Cost control         | Per-call cost in [app/services/cost.py](app/services/cost.py:23), daily agg, `CostLimitExceededError` |
 | Container parity     | `docker compose` runs the same image used in production                       |
 
----
-
-## Why this project is portfolio-worthy
-
-- **Streaming over WebSocket** — real low-latency UX, not REST polling.
-- **Manual tool-calling loop** — parsing model output, dispatching tools, re-submitting tool results. No LangChain, no abstraction tax. The loop lives in [app/services/reviewer.py](app/services/reviewer.py).
-- **Production guardrails** — daily cost limit, structured logs with request IDs, global exception handler, rate limiter, health probe.
-- **Fully testable** — fake Anthropic stream, in-memory SQLite, in-memory Redis, no network in tests.
-
----
-
-## Talking points for interviews
-
-- "I implemented streaming WebSocket reviews — tokens go from Claude to the browser with no buffering layer."
-- "I built the tool-calling loop manually. It's a small state machine: stream → check stop_reason → if `tool_use`, dispatch tools, append the `tool_result` user message, loop. The whole thing fits in [reviewer.py](app/services/reviewer.py)."
-- "Identical snippets hit Redis instead of the API — content-hashed cache key, 1 h TTL, persisted hit-rate in `api_costs.cache_hit_count`."
-- "Tests use a scripted fake Anthropic stream so I can assert against a deterministic multi-turn flow without burning credits or being flaky."
 # fastapi-LLM-code-review-assistant
