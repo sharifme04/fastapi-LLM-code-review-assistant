@@ -61,7 +61,50 @@ This is **Project 2** in a five-project AI-engineering portfolio. It builds on P
 
 ---
 
-## Project layout
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Backend | FastAPI + Uvicorn |
+| WebSocket | Starlette WebSocket handler + async event loop |
+| Database | PostgreSQL + asyncpg |
+| Cache | Redis (review caching, session state) |
+| ORM | SQLAlchemy 2.0 (async) |
+| LLM | Anthropic Claude Sonnet |
+| Tool Calling | Manual loop (no LangChain) — parse model output, execute tools, resubmit |
+| Validation | Pydantic v2 + pydantic-settings |
+| Rate Limiting | slowapi |
+| Testing | pytest + pytest-asyncio |
+| Logging | python-json-logger (structured JSON) |
+| Containerisation | Docker Compose |
+| Frontend Demo | HTML5 + Vanilla JS + EventSource for streaming |
+
+## Features
+
+- ✅ **WebSocket Real-Time Streaming** — Stream code review chunks as they arrive from Claude
+- ✅ **Manual Tool-Calling Loop** — Parse Claude's tool requests, execute locally (documentation lookup, style check), resubmit — no framework dependency
+- ✅ **Redis Caching** — Hash(code + language) → skip API call if seen within 1 hour
+- ✅ **Code Issue Markers** — `[ISSUE:type:line_number]` inline annotations for IDE-style highlighting
+- ✅ **Review History** — Store all reviews + tool calls + cost tracking in PostgreSQL
+- ✅ **Tool Integration** — Two built-in tools: `lookup_documentation` + `check_style_guide`
+- ✅ **Cost Tracking** — Logs tokens per request, calculates USD cost, daily budget alerts
+- ✅ **Structured Logging** — JSON logs with request_id, duration_ms, level
+- ✅ **Rate Limiting** — Protects LLM endpoints from abuse
+- ✅ **Health Checks** — Verifies DB + Redis connectivity
+- ✅ **Review Export** — Download past reviews as markdown
+
+## API Endpoints
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/health` | Health check (DB + Redis status) |
+| WS | `/review` | WebSocket for real-time code review |
+| GET | `/reviews` | List all past reviews |
+| GET | `/reviews/{id}` | Get a specific review + tool calls |
+| POST | `/reviews/{id}/export` | Download review as markdown |
+| GET | `/analytics/summary` | Code review stats + cost summary |
+
+---
 
 ```
 project-2-code-review-assistant/
